@@ -1,5 +1,7 @@
 # Ethernet → OTN Mapper
 
+Live demo: https://boiakay.github.io/ETH_2_OTN_Mapping/
+
 An interactive, single-page visualization of how Ethernet client signals get mapped into
 ITU-T G.709 Optical Transport Network (OTN) frames — with the mapping procedure
 (**GFP-F**, **BMP**, or **GMP**) chosen by you, not hard-coded.
@@ -40,9 +42,8 @@ git remote add origin https://github.com/<your-username>/<repo-name>.git
 git push -u origin main
 ```
 
-To serve it live for free with GitHub Pages: repo **Settings → Pages → Deploy from a
-branch → main / (root)**. It'll be live at
-`https://<your-username>.github.io/<repo-name>/` a minute or two later.
+GitHub Pages is enabled for this repo, and the live site is available at:
+https://boiakay.github.io/ETH_2_OTN_Mapping/
 
 ## What's accurate, and what's illustrative
 
