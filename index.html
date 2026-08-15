@@ -28,9 +28,37 @@
     --accent-otu-dim:#5A2530;
     --accent-fec:#C77DFF;
     --accent-fec-dim:#3D2C5C;
+    --toggle-bg:#1A2029;
+    --toggle-text:#EDEFF4;
+    --toggle-border:#2F3A4C;
     --font-display:'Space Grotesk',sans-serif;
     --font-body:'Inter',sans-serif;
     --font-mono:'JetBrains Mono',monospace;
+  }
+
+  body.light-mode{
+    --bg-void:#F4F7FB;
+    --bg-panel:#FFFFFF;
+    --bg-panel-raised:#EEF3FA;
+    --bg-panel-hover:#E3EBF7;
+    --grid-line:#D8E1F0;
+    --grid-line-bright:#C2CEDF;
+    --text-primary:#0F172A;
+    --text-dim:#475569;
+    --text-faint:#64748B;
+    --accent-eth:#D97706;
+    --accent-eth-dim:#FDE68A;
+    --accent-map:#0F766E;
+    --accent-map-dim:#CCFBF1;
+    --accent-odu:#4F46E5;
+    --accent-odu-dim:#E0E7FF;
+    --accent-otu:#BE185D;
+    --accent-otu-dim:#FBCFE8;
+    --accent-fec:#7C3AED;
+    --accent-fec-dim:#EDE9FE;
+    --toggle-bg:#EAF0F9;
+    --toggle-text:#0F172A;
+    --toggle-border:#CBD5E1;
   }
 
   *{box-sizing:border-box;}
@@ -49,8 +77,82 @@
 
   .app{max-width:1080px;margin:0 auto;padding:48px 24px 80px;}
 
+  .theme-toggle{
+    position:relative;
+    appearance:none;
+    border:none;
+    background:linear-gradient(180deg, var(--toggle-bg), var(--bg-panel-raised));
+    color:var(--toggle-text);
+    border-radius:999px;
+    padding:0;
+    cursor:pointer;
+    transition:all .2s ease;
+    margin-left:auto;
+    display:inline-flex;
+    align-items:center;
+    justify-content:space-between;
+    min-width:128px;
+    min-height:46px;
+    box-shadow:inset 0 0 0 1px var(--toggle-border), 0 8px 18px rgba(15, 23, 42, 0.12);
+    overflow:hidden;
+  }
+  .theme-toggle:hover{
+    transform:translateY(-1px);
+    box-shadow:inset 0 0 0 1px var(--toggle-border), 0 10px 20px rgba(15, 23, 42, 0.16);
+  }
+  .theme-toggle:focus-visible{outline:2px solid var(--accent-map);outline-offset:3px;}
+
+  .theme-toggle-track{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    width:100%;
+    padding:6px 8px;
+    gap:8px;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    font-weight:600;
+  }
+
+  .theme-toggle-knob{
+    position:absolute;
+    top:6px;
+    left:6px;
+    width:52px;
+    height:34px;
+    border-radius:999px;
+    background:linear-gradient(135deg, var(--accent-map), var(--accent-eth));
+    box-shadow:0 3px 10px rgba(15, 23, 42, 0.22);
+    transition:transform .25s ease, background .25s ease;
+    z-index:1;
+  }
+  body.light-mode .theme-toggle-knob{
+    transform:translateX(78px);
+    background:linear-gradient(135deg, #FBBF24, #F59E0B);
+  }
+
+  .theme-option{
+    position:relative;
+    z-index:2;
+    flex:1;
+    text-align:center;
+    padding:7px 0;
+    opacity:0.7;
+    transition:opacity .2s ease, color .2s ease;
+  }
+  .theme-option.active{
+    opacity:1;
+    color:var(--toggle-text);
+  }
+  body.light-mode .theme-option.active{ color:#0F172A; }
+  .theme-option:not(.active){ color:var(--text-dim); }
+
   /* ---------- Hero ---------- */
   .hero{margin-bottom:40px;border-bottom:1px solid var(--grid-line);padding-bottom:32px;}
+  .hero-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
   .hero-eyebrow{
     font-family:var(--font-mono);
     font-size:12px;
@@ -273,8 +375,19 @@
 <div class="app">
 
   <header class="hero">
-    <div class="hero-eyebrow">ITU-T G.709 / G.7041 · client mapping visualizer</div>
-    <h1>Ethernet <span class="arrow">→</span> OTN Mapper</h1>
+    <div class="hero-head">
+      <div>
+        <div class="hero-eyebrow">ITU-T G.709 / G.7041 · client mapping visualizer</div>
+        <h1>Ethernet <span class="arrow">→</span> OTN Mapper</h1>
+      </div>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light mode">
+        <span class="theme-toggle-track">
+          <span class="theme-toggle-knob" aria-hidden="true"></span>
+          <span class="theme-option active">Dark</span>
+          <span class="theme-option">Light</span>
+        </span>
+      </button>
+    </div>
     <p>Pick an Ethernet client rate and a mapping procedure, and watch the same frame get wrapped in
       <strong>GFP-F</strong>, <strong>BMP</strong>, or <strong>GMP</strong> overhead on its way into an
       OPU/ODU/OTU container. Every field below is computed live from the sample payload — including the
@@ -356,6 +469,38 @@
   function hex(n, width){ return n.toString(16).toUpperCase().padStart(width,'0'); }
   function u16bytes(n){ return [ (n>>8)&0xFF, n&0xFF ]; }
   function u32bytes(n){ return [ (n>>>24)&0xFF, (n>>>16)&0xFF, (n>>>8)&0xFF, n&0xFF ]; }
+
+  const THEME_KEY = 'eth-otn-theme';
+
+  function applyTheme(theme){
+    const isLight = theme === 'light';
+    document.body.classList.toggle('light-mode', isLight);
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle){
+      toggle.setAttribute('aria-label', isLight ? 'Switch to dark mode' : 'Switch to light mode');
+    }
+    const darkOption = document.querySelector('.theme-option:nth-child(2)');
+    const lightOption = document.querySelector('.theme-option:nth-child(3)');
+    if (darkOption && lightOption){
+      darkOption.classList.toggle('active', !isLight);
+      lightOption.classList.toggle('active', isLight);
+    }
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  }
+
+  const savedTheme = (() => {
+    try {
+      return localStorage.getItem(THEME_KEY) || 'dark';
+    } catch (e) {
+      return 'dark';
+    }
+  })();
+
+  applyTheme(savedTheme);
+  document.getElementById('theme-toggle').addEventListener('click', ()=>{
+    const nextTheme = document.body.classList.contains('light-mode') ? 'dark' : 'light';
+    applyTheme(nextTheme);
+  });
 
   // ---------------- Domain data ----------------
   const RATES = {
