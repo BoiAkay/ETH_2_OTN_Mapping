@@ -203,6 +203,209 @@
     return map[rateKey];
   }
 
+  // ---------------- Byte-by-byte trace ----------------
+  const FIELD_META = {
+    da:        { bg:'#F2A93C', text:'#241a06', label:'Destination Address' },
+    sa:        { bg:'#D9860F', text:'#241a06', label:'Source Address' },
+    ethertype: { bg:'#8DA0F5', text:'#0d1533', label:'EtherType' },
+    data:      { bg:'#4FD8C4', text:'#04211d', label:'Data' },
+    fcs:       { bg:'#EF6B84', text:'#2b0a10', label:'Frame Check Sequence (CRC-32)' },
+    'gfp-pli':  { bg:'#C77DFF', text:'#1f0733', label:'GFP Core Header — PLI' },
+    'gfp-chec': { bg:'#A85FE0', text:'#1a0630', label:'GFP Core Header — cHEC' },
+    'gfp-type': { bg:'#7C9CFF', text:'#0a1233', label:'GFP Payload Header — Type field' },
+    'gfp-thec': { bg:'#5F86E0', text:'#08102b', label:'GFP Payload Header — tHEC' },
+    'gfp-fcs':  { bg:'#EF6B84', text:'#2b0a10', label:'GFP optional Payload FCS' },
+    stuff:     { bg:'#4B5468', text:'#e7ebf3', label:'Stuff byte (no client data)' }
+  };
+  const PAYLOAD_COLS_PER_ROW = 3808; // columns 17–3824
+
+  function pushEthernetBytes(seq, eth){
+    eth.DA.forEach(v=> seq.push({field:'da', value:v}));
+    eth.SA.forEach(v=> seq.push({field:'sa', value:v}));
+    eth.ETHERTYPE.forEach(v=> seq.push({field:'ethertype', value:v}));
+    eth.padded.forEach((v,i)=> seq.push({field:'data', value:v, dataIdx:i, isRealData: i < eth.dataBytes.length}));
+    u32bytes(eth.fcs).forEach(v=> seq.push({field:'fcs', value:v}));
+  }
+
+  function buildWireSequence(eth, procedure){
+    const seq = [];
+    if (procedure === 'gfpf'){
+      const gfp = buildGfpF(eth.frame);
+      u16bytes(gfp.PLI).forEach(v=> seq.push({field:'gfp-pli', value:v}));
+      u16bytes(gfp.cHEC).forEach(v=> seq.push({field:'gfp-chec', value:v}));
+      gfp.typeBytes.forEach(v=> seq.push({field:'gfp-type', value:v}));
+      u16bytes(gfp.tHEC).forEach(v=> seq.push({field:'gfp-thec', value:v}));
+      pushEthernetBytes(seq, eth);
+      u32bytes(gfp.payloadFcs).forEach(v=> seq.push({field:'gfp-fcs', value:v}));
+    } else {
+      pushEthernetBytes(seq, eth);
+    }
+    return seq;
+  }
+
+  // Interleaves illustrative GMP stuff bytes among the real wire bytes; a no-op for GFP-F/BMP.
+  function buildDestSequence(wireSeq, procedure, fillRatio){
+    if (procedure !== 'gmp'){
+      return wireSeq.map((b,i)=> Object.assign({}, b, { srcIndex:i }));
+    }
+    const nCells = Math.max(wireSeq.length, Math.round(wireSeq.length / fillRatio));
+    const pattern = gmpPattern(nCells, fillRatio);
+    const dest = [];
+    let srcPtr = 0;
+    for (let i=0;i<nCells && srcPtr<wireSeq.length;i++){
+      if (pattern[i]){
+        dest.push(Object.assign({}, wireSeq[srcPtr], { srcIndex:srcPtr }));
+        srcPtr++;
+      } else {
+        dest.push({ field:'stuff', value:0x00, srcIndex:null });
+      }
+    }
+    while (srcPtr < wireSeq.length){
+      dest.push(Object.assign({}, wireSeq[srcPtr], { srcIndex:srcPtr }));
+      srcPtr++;
+    }
+    return dest;
+  }
+
+  function assignPositions(destSeq){
+    return destSeq.map((b,i)=>{
+      const row = Math.floor(i / PAYLOAD_COLS_PER_ROW) + 1;
+      const col = 17 + (i % PAYLOAD_COLS_PER_ROW);
+      return Object.assign({}, b, { row, col });
+    });
+  }
+
+  function traceCell(b, side, idx){
+    const meta = FIELD_META[b.field] || {bg:'#666', text:'#fff', label:b.field};
+    const div = document.createElement('div');
+    div.className = 'trace-cell';
+    div.style.background = meta.bg;
+    div.style.color = meta.text;
+    div.dataset.side = side;
+    div.dataset.idx = idx;
+    const ref = side === 'src' ? idx : b.srcIndex;
+    if (ref !== null && ref !== undefined) div.dataset.ref = 'r' + ref;
+
+    const val = document.createElement('div'); val.className='val'; val.textContent = hex(b.value,2);
+    div.appendChild(val);
+    const sub = document.createElement('div'); sub.className='sub';
+    sub.textContent = side === 'dst' ? ('c' + b.col) : String(idx+1);
+    div.appendChild(sub);
+
+    div.addEventListener('mouseenter', ()=> highlightRef(div.dataset.ref, div));
+    div.addEventListener('mouseleave', clearHighlight);
+    div.addEventListener('click', ()=> showTraceDetail(b, side));
+    return div;
+  }
+
+  function highlightRef(ref, selfEl){
+    clearHighlight();
+    if (ref){
+      document.querySelectorAll('.trace-cell[data-ref="'+ref+'"]').forEach(c=> c.classList.add('is-linked'));
+    } else if (selfEl){
+      selfEl.classList.add('is-linked');
+    }
+  }
+  function clearHighlight(){
+    document.querySelectorAll('.trace-cell.is-linked').forEach(c=> c.classList.remove('is-linked'));
+  }
+
+  function showTraceDetail(b, side){
+    const meta = FIELD_META[b.field] || {label:b.field};
+    let out = '<b>' + meta.label + '</b> — value 0x' + hex(b.value,2);
+    if (b.field==='data' && b.value>=0x20 && b.value<=0x7e){
+      out += " ('" + String.fromCharCode(b.value) + "')";
+    }
+    if (b.field==='data'){
+      out += b.isRealData ? (' — typed payload byte ' + (b.dataIdx+1) + '.') : ' — zero-padding to reach the 46-byte minimum data field.';
+    }
+    if (b.field==='stuff'){
+      out += ' — no client data here; a GMP justification filler position in this illustration.';
+    }
+    if (side==='dst' && b.row && b.col){
+      out += ' Lands at OTU row ' + b.row + ', column ' + b.col + '.';
+    }
+    document.getElementById('tracer-detail').innerHTML = out;
+  }
+
+  function animateTracer(){
+    const dstCells = Array.from(document.querySelectorAll('#tracer-dest .trace-cell'));
+    const srcCells = Array.from(document.querySelectorAll('#tracer-source .trace-cell'));
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    dstCells.forEach(c=>{ c.classList.add('dimmed'); c.classList.remove('revealed','is-active-now'); });
+    srcCells.forEach(c=> c.classList.remove('is-active-now'));
+    if (reduceMotion){
+      dstCells.forEach(c=>{ c.classList.remove('dimmed'); c.classList.add('revealed'); });
+      return;
+    }
+    const n = dstCells.length;
+    const delayStep = Math.max(10, Math.min(45, Math.floor(2200 / Math.max(n,1))));
+    let i = 0;
+    function step(){
+      document.querySelectorAll('.trace-cell.is-active-now').forEach(c=> c.classList.remove('is-active-now'));
+      if (i >= n) return;
+      const cellEl = dstCells[i];
+      cellEl.classList.remove('dimmed');
+      cellEl.classList.add('revealed','is-active-now');
+      const ref = cellEl.dataset.ref;
+      if (ref){
+        document.querySelectorAll('.trace-cell[data-side="src"][data-ref="'+ref+'"]').forEach(c=> c.classList.add('is-active-now'));
+      }
+      if (i % 4 === 0) cellEl.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+      i++;
+      setTimeout(step, delayStep);
+    }
+    step();
+  }
+
+  function renderTracer(eth, procedure, container){
+    const wireSeq = buildWireSequence(eth, procedure);
+    let fillRatio = 0.94;
+    if (procedure === 'gmp'){
+      fillRatio = Math.min(0.99, clientRateGbps(state.rate) / containerRateGbps(state.rate, 'gmp'));
+    }
+    const destSeq = assignPositions(buildDestSequence(wireSeq, procedure, fillRatio));
+
+    const srcWrap = document.getElementById('tracer-source');
+    const dstWrap = document.getElementById('tracer-dest');
+    srcWrap.innerHTML = ''; dstWrap.innerHTML = '';
+    wireSeq.forEach((b,i)=> srcWrap.appendChild(traceCell(b,'src',i)));
+    destSeq.forEach((b,i)=> dstWrap.appendChild(traceCell(b,'dst',i)));
+
+    document.getElementById('tracer-source-count').textContent = wireSeq.length;
+    document.getElementById('tracer-dest-count').textContent = destSeq.length;
+    const maxRow = destSeq.length ? Math.max.apply(null, destSeq.map(d=>d.row)) : 1;
+    document.getElementById('tracer-row-num').textContent = '1';
+    document.getElementById('tracer-rows-note').textContent = maxRow > 1
+      ? ('This sample spans rows 1–' + maxRow + ' of the OPU payload (wraps once column 3824 is reached).')
+      : 'This sample fits entirely within row 1 of the OPU payload — a real client signal would keep streaming rightward across all 3,808 payload columns before wrapping to row 2.';
+
+    const intro = document.getElementById('tracer-intro');
+    if (procedure === 'gfpf'){
+      intro.textContent = 'GFP-F adds a Core Header and Payload Header before your Ethernet frame, then an optional FCS after it — every one of those bytes is shown below, in the exact order they\'re transmitted.';
+    } else if (procedure === 'bmp'){
+      intro.textContent = 'BMP adds no per-frame header — your Ethernet frame\'s bytes map straight across, in order. (Real BMP justification bytes appear only once per multiframe, far coarser than this small sample shows.)';
+    } else {
+      intro.textContent = 'GMP interleaves stuff (grey) bytes among your Ethernet frame\'s bytes so the average data rate matches the container — the pattern below is illustrative, not the literal per-frame Cm sequence.';
+    }
+
+    const legend = document.getElementById('tracer-legend');
+    legend.innerHTML = '';
+    const used = [];
+    wireSeq.concat(destSeq).forEach(b=>{ if (used.indexOf(b.field) === -1) used.push(b.field); });
+    used.forEach(f=>{
+      const meta = FIELD_META[f];
+      if (!meta) return;
+      const item = document.createElement('div'); item.className='legend-item';
+      const sw = document.createElement('span'); sw.className='legend-swatch'; sw.style.background = meta.bg;
+      item.appendChild(sw); item.appendChild(document.createTextNode(meta.label));
+      legend.appendChild(item);
+    });
+
+    document.getElementById('tracer-detail').textContent = 'Click any byte above for details.';
+    document.getElementById('tracer-play').onclick = animateTracer;
+  }
+
   // ---------------- Rendering ----------------
   function render(){
     const rateInfo = RATES[state.rate];
@@ -238,6 +441,7 @@
     const eth = buildEthernetFrame(payloadText);
 
     renderPipeline(rateInfo, container, eth);
+    renderTracer(eth, state.procedure, container);
     renderFrameGrid();
   }
 

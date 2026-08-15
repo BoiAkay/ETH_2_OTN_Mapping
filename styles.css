@@ -299,6 +299,54 @@
   .mosaic{display:flex;flex-wrap:wrap;gap:2px;margin:12px 0;}
   .mosaic div{width:9px;height:9px;border-radius:1.5px;}
 
+  /* ---------- Byte tracer ---------- */
+  .tracer-section{margin-bottom:48px;}
+  .tracer-panel{
+    background:var(--bg-panel);
+    border:1px solid var(--grid-line);
+    border-radius:12px;
+    padding:20px;
+  }
+  .tracer-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+  .tracer-hint{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);}
+  .tracer-row-caption{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-bottom:8px;}
+  .tracer-strip{
+    display:flex;
+    overflow-x:auto;
+    gap:2px;
+    padding:8px 8px 12px;
+    background:var(--bg-panel-raised);
+    border:1px solid var(--grid-line);
+    border-radius:8px;
+  }
+  .tracer-connector{
+    text-align:center;
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--accent-map);
+    padding:10px 0;
+  }
+  .trace-cell{
+    flex:0 0 32px;
+    width:32px;height:44px;
+    border-radius:4px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    cursor:pointer;
+    border:1px solid rgba(0,0,0,0.28);
+    transition:opacity .2s ease, filter .2s ease, box-shadow .12s ease;
+  }
+  .trace-cell .val{font-family:var(--font-mono);font-size:10.5px;font-weight:700;line-height:1;}
+  .trace-cell .sub{font-family:var(--font-mono);font-size:8px;line-height:1;margin-top:4px;opacity:0.75;}
+  .trace-cell.is-linked{box-shadow:0 0 0 2px var(--text-primary);z-index:2;transform:translateY(-1px);}
+  .trace-cell.is-active-now{box-shadow:0 0 0 2px var(--text-primary), 0 0 10px rgba(255,255,255,0.45);z-index:3;}
+  .trace-cell.dimmed{opacity:0.16;filter:grayscale(70%);}
+  .trace-cell.revealed{opacity:1;filter:none;}
+  .tracer-rows-note{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);margin:14px 0 0;}
+
+  @media (max-width:640px){
+    .trace-cell{flex:0 0 28px;width:28px;height:40px;}
+  }
+
   /* ---------- Frame diagram ---------- */
   .frame-section{margin-bottom:48px;}
   .frame-scale-note{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);margin-bottom:14px;}

@@ -56,6 +56,29 @@
     <div id="pipeline-stages"></div>
   </section>
 
+  <section class="tracer-section" aria-label="Byte-by-byte trace">
+    <h2 class="section-heading">Byte-by-byte trace</h2>
+    <p class="section-sub" id="tracer-intro">Exactly which OTU column each byte of the sample Ethernet frame lands in — click any byte, or press animate to watch it stream in.</p>
+    <div class="tracer-panel">
+      <div class="tracer-controls">
+        <button id="tracer-play" class="opt-btn" type="button">▶ Animate mapping</button>
+        <span class="tracer-hint">Hover a byte to see where it goes on the other strip.</span>
+      </div>
+      <div class="tracer-row">
+        <div class="tracer-row-caption">Source — wire bytes going into the OPU payload (<span id="tracer-source-count">0</span> bytes)</div>
+        <div class="tracer-strip" id="tracer-source"></div>
+      </div>
+      <div class="tracer-connector">↓ mapped into OTU row <span id="tracer-row-num">1</span>, starting at column 17 ↓</div>
+      <div class="tracer-row">
+        <div class="tracer-row-caption">Destination — OTU frame columns (<span id="tracer-dest-count">0</span> bytes)</div>
+        <div class="tracer-strip" id="tracer-dest"></div>
+      </div>
+      <p class="tracer-rows-note" id="tracer-rows-note"></p>
+      <div class="frame-detail" id="tracer-detail">Click any byte above for details.</div>
+      <div class="legend" id="tracer-legend"></div>
+    </div>
+  </section>
+
   <section class="frame-section">
     <h2 class="section-heading">OTU frame structure</h2>
     <p class="section-sub">4 rows × 4080 columns, fixed regardless of client rate. Click a region for details.</p>
