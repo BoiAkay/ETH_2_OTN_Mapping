@@ -275,6 +275,8 @@
     });
   }
 
+  const BYTES_PER_LINE = 16;
+
   function traceCell(b, side, idx){
     const meta = FIELD_META[b.field] || {bg:'#666', text:'#fff', label:b.field};
     const div = document.createElement('div');
@@ -288,14 +290,49 @@
 
     const val = document.createElement('div'); val.className='val'; val.textContent = hex(b.value,2);
     div.appendChild(val);
-    const sub = document.createElement('div'); sub.className='sub';
-    sub.textContent = side === 'dst' ? ('c' + b.col) : String(idx+1);
-    div.appendChild(sub);
 
     div.addEventListener('mouseenter', ()=> highlightRef(div.dataset.ref, div));
     div.addEventListener('mouseleave', clearHighlight);
     div.addEventListener('click', ()=> showTraceDetail(b, side));
     return div;
+  }
+
+  // Renders a byte sequence as hex-dump-style wrapped lines (16 bytes/line) instead of one
+  // long scrolling strip, with a divider whenever the destination sequence actually crosses
+  // into the next real OTU frame row (payload columns are 3808 wide — evenly divisible by 16,
+  // so a row boundary always lands cleanly between two lines, never mid-line).
+  function renderTraceStrip(wrapEl, seq, side){
+    wrapEl.innerHTML = '';
+    let lastRow = null;
+    for (let i=0; i<seq.length; i+=BYTES_PER_LINE){
+      const chunk = seq.slice(i, i+BYTES_PER_LINE);
+
+      if (side === 'dst' && chunk[0].row !== lastRow){
+        if (lastRow !== null){
+          const marker = document.createElement('div');
+          marker.className = 'trace-row-boundary';
+          marker.textContent = '── OTU frame row ' + chunk[0].row + ' begins (column 17) ──';
+          wrapEl.appendChild(marker);
+        }
+        lastRow = chunk[0].row;
+      }
+
+      const line = document.createElement('div');
+      line.className = 'trace-line';
+      const addr = document.createElement('div');
+      addr.className = 'trace-line-addr';
+      addr.textContent = side === 'dst' ? ('R' + chunk[0].row + ' · c' + chunk[0].col) : ('byte ' + (i+1));
+      line.appendChild(addr);
+      const cellsWrap = document.createElement('div');
+      cellsWrap.className = 'trace-line-cells';
+      chunk.forEach((b, j)=>{
+        const cellEl = traceCell(b, side, i+j);
+        if (j % 4 === 3) cellEl.classList.add('group-end');
+        cellsWrap.appendChild(cellEl);
+      });
+      line.appendChild(cellsWrap);
+      wrapEl.appendChild(line);
+    }
   }
 
   function highlightRef(ref, selfEl){
@@ -368,14 +405,12 @@
 
     const srcWrap = document.getElementById('tracer-source');
     const dstWrap = document.getElementById('tracer-dest');
-    srcWrap.innerHTML = ''; dstWrap.innerHTML = '';
-    wireSeq.forEach((b,i)=> srcWrap.appendChild(traceCell(b,'src',i)));
-    destSeq.forEach((b,i)=> dstWrap.appendChild(traceCell(b,'dst',i)));
+    renderTraceStrip(srcWrap, wireSeq, 'src');
+    renderTraceStrip(dstWrap, destSeq, 'dst');
 
     document.getElementById('tracer-source-count').textContent = wireSeq.length;
     document.getElementById('tracer-dest-count').textContent = destSeq.length;
     const maxRow = destSeq.length ? Math.max.apply(null, destSeq.map(d=>d.row)) : 1;
-    document.getElementById('tracer-row-num').textContent = '1';
     document.getElementById('tracer-rows-note').textContent = maxRow > 1
       ? ('This sample spans rows 1–' + maxRow + ' of the OPU payload (wraps once column 3824 is reached).')
       : 'This sample fits entirely within row 1 of the OPU payload — a real client signal would keep streaming rightward across all 3,808 payload columns before wrapping to row 2.';
@@ -485,7 +520,10 @@
       s.appendChild(body);
       wrap.appendChild(s);
       const arrow = document.createElement('div');
-      arrow.className='stage-arrow'; arrow.textContent='↓';
+      arrow.className='stage-arrow';
+      const flow = document.createElement('div');
+      flow.className='flow-connector';
+      arrow.appendChild(flow);
       wrap.appendChild(arrow);
     }
 
