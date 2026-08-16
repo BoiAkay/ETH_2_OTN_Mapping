@@ -1,0 +1,25 @@
+{
+  "name": "eth_2_otn_mapping",
+  "version": "1.0.0",
+  "description": "Live demo: https://boiakay.github.io/ETH_2_OTN_Mapping/",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BoiAkay/ETH_2_OTN_Mapping.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/BoiAkay/ETH_2_OTN_Mapping/issues"
+  },
+  "homepage": "https://github.com/BoiAkay/ETH_2_OTN_Mapping#readme",
+  "dependencies": {
+    "jsdom": "^29.1.1",
+    "playwright": "^1.62.1"
+  }
+}

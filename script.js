@@ -123,7 +123,7 @@
     payload:'#F2A93C', fec:'#C77DFF'
   };
 
-  let state = { rate:'10gbe-lan', procedure:'bmp', pinnedRegion:null };
+  let state = { rate:'1gbe', procedure:'gfpf', pinnedRegion:null, traceFormat:'hex' };
 
   // ---------------- Build controls ----------------
   const rateRow = document.getElementById('rate-row');
@@ -141,6 +141,14 @@
     b.className='opt-btn'; b.textContent = PROC_INFO[key].label; b.dataset.proc = key;
     b.addEventListener('click', ()=>{ state.procedure = key; render(); });
     procRow.appendChild(b);
+  });
+
+  const formatRow = document.getElementById('tracer-format-row');
+  [['hex','Hex'], ['bin','Binary']].forEach(([key,label])=>{
+    const b = document.createElement('button');
+    b.className='opt-btn'; b.textContent = label; b.dataset.format = key;
+    b.addEventListener('click', ()=>{ state.traceFormat = key; render(); });
+    formatRow.appendChild(b);
   });
 
   document.getElementById('payload-text').addEventListener('input', render);
@@ -288,19 +296,22 @@
     });
   }
 
-  const BYTES_PER_LINE = 16;
+  function bytesPerLine(){ return state.traceFormat === 'bin' ? 8 : 16; }
+
+  function bin8(n){ return n.toString(2).padStart(8,'0'); }
 
   function traceCell(b, side, idx, ref){
     const meta = FIELD_META[b.field] || {bg:'#666', text:'#fff', label:b.field};
     const div = document.createElement('div');
-    div.className = 'trace-cell';
+    div.className = 'trace-cell' + (state.traceFormat === 'bin' ? ' bin-mode' : '');
     div.style.background = meta.bg;
     div.style.color = meta.text;
     div.dataset.side = side;
     div.dataset.idx = idx;
     if (ref !== null && ref !== undefined) div.dataset.ref = 'r' + ref;
 
-    const val = document.createElement('div'); val.className='val'; val.textContent = hex(b.value,2);
+    const val = document.createElement('div'); val.className='val';
+    val.textContent = state.traceFormat === 'bin' ? bin8(b.value) : hex(b.value,2);
     div.appendChild(val);
 
     div.addEventListener('mouseenter', ()=> highlightRef(div.dataset.ref, div));
@@ -318,8 +329,9 @@
   function renderTraceStrip(wrapEl, seq, side, refFn){
     wrapEl.innerHTML = '';
     let lastRow = null;
-    for (let i=0; i<seq.length; i+=BYTES_PER_LINE){
-      const chunk = seq.slice(i, i+BYTES_PER_LINE);
+    const lineWidth = bytesPerLine();
+    for (let i=0; i<seq.length; i+=lineWidth){
+      const chunk = seq.slice(i, i+lineWidth);
 
       if (side === 'dst' && chunk[0].row !== lastRow){
         if (lastRow !== null){
@@ -365,7 +377,7 @@
 
   function showTraceDetail(b, side){
     const meta = FIELD_META[b.field] || {label:b.field};
-    let out = '<b>' + meta.label + '</b> — value 0x' + hex(b.value,2);
+    let out = '<b>' + meta.label + '</b> — 0x' + hex(b.value,2) + ' <span class="detail-bin">(' + bin8(b.value) + ')</span>';
     if (b.field==='data' && b.value>=0x20 && b.value<=0x7e){
       out += " ('" + String.fromCharCode(b.value) + "')";
     }
@@ -440,8 +452,8 @@
     if (hasWireStage){
       renderTraceStrip(wireWrap, wireSeq, 'wire', (b,i)=> i);
       document.getElementById('tracer-wire-count').textContent = wireSeq.length;
-      document.getElementById('tracer-wire-caption').textContent =
-        'GFP-F wire bytes — Ethernet frame wrapped in a Core Header + Payload Header (+ optional FCS) — what actually enters the OPU payload (' + wireSeq.length + ' bytes)';
+      document.getElementById('tracer-wire-caption-text').textContent =
+        'GFP-F wire bytes — Ethernet frame wrapped in a Core Header + Payload Header (+ optional FCS) — what actually enters the OPU payload';
     }
 
     document.getElementById('tracer-eth-count').textContent = ethSeq.length;
@@ -450,12 +462,12 @@
     const c1 = document.getElementById('tracer-connector-1');
     const c2 = document.getElementById('tracer-connector-2');
     if (procedure === 'gfpf'){
-      c1.textContent = '↓ wrapped in a ' + (offset) + '-byte GFP-F Core + Payload Header, plus a 4-byte optional FCS after ↓';
+      c1.innerHTML = '↓ wrapped in a ' + (offset) + '-byte GFP-F Core + Payload Header, plus a 4-byte optional FCS after ↓';
       c2.textContent = '↓ this GFP-F frame maps into the OPU payload, starting at row 1, column 17 ↓';
     } else if (procedure === 'bmp'){
-      c1.textContent = '↓ no extra framing added — mapped directly into the OPU payload, starting at row 1, column 17 (that\'s what "bit-synchronous" means) ↓';
+      c1.innerHTML = '<span class="badge standard">◆ No separate framing</span> BMP maps these bytes straight into the OPU payload, starting at row 1, column 17 — that\'s what "bit-synchronous" means.';
     } else {
-      c1.textContent = '↓ no separate framing header — interleaved with GMP stuff bytes directly into the OPU payload, starting at row 1, column 17 (see the grey cells below) ↓';
+      c1.innerHTML = '<span class="badge standard">◆ No separate framing</span> GMP interleaves stuff bytes directly into the OPU payload (grey cells below), starting at row 1, column 17 — no separate header either.';
     }
 
     const maxRow = destSeq.length ? Math.max.apply(null, destSeq.map(d=>d.row)) : 1;
@@ -500,6 +512,9 @@
     });
     document.querySelectorAll('#proc-row .opt-btn').forEach(b=>{
       b.classList.toggle('active', b.dataset.proc === state.procedure);
+    });
+    document.querySelectorAll('#tracer-format-row .opt-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.format === state.traceFormat);
     });
 
     const badgeRow = document.getElementById('badge-row');
