@@ -750,8 +750,20 @@
           seg.style.flex = reg.width;
           seg.style.background = reg.color;
           seg.dataset.key = reg.key;
+
+          let hoverScale = 1.12;
+          if (reg.width <= 14) hoverScale = 5.5;
+          else if (reg.width <= 16) hoverScale = 4.25;
+          else if (reg.width <= 80) hoverScale = 2.4;
+          else if (reg.width <= 256) hoverScale = 1.5;
+          seg.style.setProperty('--hover-scale', hoverScale.toFixed(2));
+
           seg.addEventListener('click', ()=> showRegion(reg));
-          seg.addEventListener('mouseenter', ()=> showRegion(reg, true));
+          seg.addEventListener('mouseenter', ()=> {
+            showRegion(reg, true);
+            seg.classList.add('hovered');
+          });
+          seg.addEventListener('mouseleave', ()=> seg.classList.remove('hovered'));
           track.appendChild(seg);
         }
       });
