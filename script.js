@@ -406,7 +406,9 @@
       if (ref){
         document.querySelectorAll('#tracer-eth .trace-cell[data-ref="'+ref+'"], #tracer-wire .trace-cell[data-ref="'+ref+'"]').forEach(c=> c.classList.add('is-active-now'));
       }
-      if (i % 4 === 0) cellEl.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+      if (i % 4 === 0 && typeof cellEl.scrollIntoView === 'function'){
+        cellEl.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+      }
       i++;
       setTimeout(step, delayStep);
     }
