@@ -227,6 +227,19 @@
     u32bytes(eth.fcs).forEach(v=> seq.push({field:'fcs', value:v}));
   }
 
+  function buildEthFrameSequence(eth){
+    const seq = [];
+    pushEthernetBytes(seq, eth);
+    return seq;
+  }
+
+  // Number of wire-sequence bytes that precede the Ethernet frame for a given procedure —
+  // 8 for GFP-F (PLI 2 + cHEC 2 + Type 2 + tHEC 2), 0 for BMP/GMP since the Ethernet frame
+  // itself *is* the wire sequence with no separate framing header.
+  function ethOffsetInWire(procedure){
+    return procedure === 'gfpf' ? 8 : 0;
+  }
+
   function buildWireSequence(eth, procedure){
     const seq = [];
     if (procedure === 'gfpf'){
@@ -277,7 +290,7 @@
 
   const BYTES_PER_LINE = 16;
 
-  function traceCell(b, side, idx){
+  function traceCell(b, side, idx, ref){
     const meta = FIELD_META[b.field] || {bg:'#666', text:'#fff', label:b.field};
     const div = document.createElement('div');
     div.className = 'trace-cell';
@@ -285,7 +298,6 @@
     div.style.color = meta.text;
     div.dataset.side = side;
     div.dataset.idx = idx;
-    const ref = side === 'src' ? idx : b.srcIndex;
     if (ref !== null && ref !== undefined) div.dataset.ref = 'r' + ref;
 
     const val = document.createElement('div'); val.className='val'; val.textContent = hex(b.value,2);
@@ -301,7 +313,9 @@
   // long scrolling strip, with a divider whenever the destination sequence actually crosses
   // into the next real OTU frame row (payload columns are 3808 wide — evenly divisible by 16,
   // so a row boundary always lands cleanly between two lines, never mid-line).
-  function renderTraceStrip(wrapEl, seq, side){
+  // refFn(byte, globalIdx) returns the shared cross-tier reference id used to link a byte to
+  // its counterpart(s) in the other strip(s); pass null/undefined for no linking.
+  function renderTraceStrip(wrapEl, seq, side, refFn){
     wrapEl.innerHTML = '';
     let lastRow = null;
     for (let i=0; i<seq.length; i+=BYTES_PER_LINE){
@@ -326,7 +340,9 @@
       const cellsWrap = document.createElement('div');
       cellsWrap.className = 'trace-line-cells';
       chunk.forEach((b, j)=>{
-        const cellEl = traceCell(b, side, i+j);
+        const globalIdx = i+j;
+        const ref = refFn ? refFn(b, globalIdx) : null;
+        const cellEl = traceCell(b, side, globalIdx, ref);
         if (j % 4 === 3) cellEl.classList.add('group-end');
         cellsWrap.appendChild(cellEl);
       });
@@ -359,6 +375,9 @@
     if (b.field==='stuff'){
       out += ' — no client data here; a GMP justification filler position in this illustration.';
     }
+    if (side==='eth' && state.procedure==='gfpf'){
+      out += ' Carried inside the GFP-F Payload Information Field — hover to see exactly where.';
+    }
     if (side==='dst' && b.row && b.col){
       out += ' Lands at OTU row ' + b.row + ', column ' + b.col + '.';
     }
@@ -367,10 +386,9 @@
 
   function animateTracer(){
     const dstCells = Array.from(document.querySelectorAll('#tracer-dest .trace-cell'));
-    const srcCells = Array.from(document.querySelectorAll('#tracer-source .trace-cell'));
     const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     dstCells.forEach(c=>{ c.classList.add('dimmed'); c.classList.remove('revealed','is-active-now'); });
-    srcCells.forEach(c=> c.classList.remove('is-active-now'));
+    document.querySelectorAll('#tracer-eth .trace-cell, #tracer-wire .trace-cell').forEach(c=> c.classList.remove('is-active-now'));
     if (reduceMotion){
       dstCells.forEach(c=>{ c.classList.remove('dimmed'); c.classList.add('revealed'); });
       return;
@@ -386,7 +404,7 @@
       cellEl.classList.add('revealed','is-active-now');
       const ref = cellEl.dataset.ref;
       if (ref){
-        document.querySelectorAll('.trace-cell[data-side="src"][data-ref="'+ref+'"]').forEach(c=> c.classList.add('is-active-now'));
+        document.querySelectorAll('#tracer-eth .trace-cell[data-ref="'+ref+'"], #tracer-wire .trace-cell[data-ref="'+ref+'"]').forEach(c=> c.classList.add('is-active-now'));
       }
       if (i % 4 === 0) cellEl.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
       i++;
@@ -396,20 +414,48 @@
   }
 
   function renderTracer(eth, procedure, container){
+    const ethSeq = buildEthFrameSequence(eth);
     const wireSeq = buildWireSequence(eth, procedure);
+    const offset = ethOffsetInWire(procedure);
     let fillRatio = 0.94;
     if (procedure === 'gmp'){
       fillRatio = Math.min(0.99, clientRateGbps(state.rate) / containerRateGbps(state.rate, 'gmp'));
     }
     const destSeq = assignPositions(buildDestSequence(wireSeq, procedure, fillRatio));
+    const hasWireStage = procedure === 'gfpf'; // only GFP-F actually adds separate framing bytes
 
-    const srcWrap = document.getElementById('tracer-source');
+    const ethWrap = document.getElementById('tracer-eth');
+    const wireWrap = document.getElementById('tracer-wire');
     const dstWrap = document.getElementById('tracer-dest');
-    renderTraceStrip(srcWrap, wireSeq, 'src');
-    renderTraceStrip(dstWrap, destSeq, 'dst');
 
-    document.getElementById('tracer-source-count').textContent = wireSeq.length;
+    // Ethernet-frame cells reference the wire-sequence index they occupy once wrapped —
+    // this is what lets a hover on the Ethernet strip light up the same byte everywhere else.
+    renderTraceStrip(ethWrap, ethSeq, 'eth', (b,i)=> offset + i);
+    renderTraceStrip(dstWrap, destSeq, 'dst', (b)=> b.srcIndex);
+
+    const wireBlock = document.getElementById('tracer-wire-block');
+    wireBlock.style.display = hasWireStage ? '' : 'none';
+    if (hasWireStage){
+      renderTraceStrip(wireWrap, wireSeq, 'wire', (b,i)=> i);
+      document.getElementById('tracer-wire-count').textContent = wireSeq.length;
+      document.getElementById('tracer-wire-caption').textContent =
+        'GFP-F wire bytes — Ethernet frame wrapped in a Core Header + Payload Header (+ optional FCS) — what actually enters the OPU payload (' + wireSeq.length + ' bytes)';
+    }
+
+    document.getElementById('tracer-eth-count').textContent = ethSeq.length;
     document.getElementById('tracer-dest-count').textContent = destSeq.length;
+
+    const c1 = document.getElementById('tracer-connector-1');
+    const c2 = document.getElementById('tracer-connector-2');
+    if (procedure === 'gfpf'){
+      c1.textContent = '↓ wrapped in a ' + (offset) + '-byte GFP-F Core + Payload Header, plus a 4-byte optional FCS after ↓';
+      c2.textContent = '↓ this GFP-F frame maps into the OPU payload, starting at row 1, column 17 ↓';
+    } else if (procedure === 'bmp'){
+      c1.textContent = '↓ no extra framing added — mapped directly into the OPU payload, starting at row 1, column 17 (that\'s what "bit-synchronous" means) ↓';
+    } else {
+      c1.textContent = '↓ no separate framing header — interleaved with GMP stuff bytes directly into the OPU payload, starting at row 1, column 17 (see the grey cells below) ↓';
+    }
+
     const maxRow = destSeq.length ? Math.max.apply(null, destSeq.map(d=>d.row)) : 1;
     document.getElementById('tracer-rows-note').textContent = maxRow > 1
       ? ('This sample spans rows 1–' + maxRow + ' of the OPU payload (wraps once column 3824 is reached).')
@@ -417,17 +463,17 @@
 
     const intro = document.getElementById('tracer-intro');
     if (procedure === 'gfpf'){
-      intro.textContent = 'GFP-F adds a Core Header and Payload Header before your Ethernet frame, then an optional FCS after it — every one of those bytes is shown below, in the exact order they\'re transmitted.';
+      intro.textContent = 'Your Ethernet frame is the input on the left. GFP-F wraps it in header bytes before it becomes wire bytes; every byte below is real, in transmission order.';
     } else if (procedure === 'bmp'){
-      intro.textContent = 'BMP adds no per-frame header — your Ethernet frame\'s bytes map straight across, in order. (Real BMP justification bytes appear only once per multiframe, far coarser than this small sample shows.)';
+      intro.textContent = 'Your Ethernet frame is the input on the left. BMP adds no header at all — those same bytes map straight into the OTU columns on the right. (Real BMP justification bytes appear only once per multiframe, far coarser than this small sample shows.)';
     } else {
-      intro.textContent = 'GMP interleaves stuff (grey) bytes among your Ethernet frame\'s bytes so the average data rate matches the container — the pattern below is illustrative, not the literal per-frame Cm sequence.';
+      intro.textContent = 'Your Ethernet frame is the input on the left. GMP interleaves stuff (grey) bytes among those bytes directly in the destination so the average rate matches the container — illustrative, not the literal per-frame Cm sequence.';
     }
 
     const legend = document.getElementById('tracer-legend');
     legend.innerHTML = '';
     const used = [];
-    wireSeq.concat(destSeq).forEach(b=>{ if (used.indexOf(b.field) === -1) used.push(b.field); });
+    ethSeq.concat(wireSeq).concat(destSeq).forEach(b=>{ if (used.indexOf(b.field) === -1) used.push(b.field); });
     used.forEach(f=>{
       const meta = FIELD_META[f];
       if (!meta) return;

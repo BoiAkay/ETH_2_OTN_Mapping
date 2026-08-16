@@ -65,10 +65,17 @@
         <span class="tracer-hint">Hover a byte to see where it goes on the other strip.</span>
       </div>
       <div class="tracer-row">
-        <div class="tracer-row-caption">Source — wire bytes going into the OPU payload (<span id="tracer-source-count">0</span> bytes)</div>
-        <div class="tracer-strip" id="tracer-source"></div>
+        <div class="tracer-row-caption">Ethernet frame — the packet being carried, unwrapped (<span id="tracer-eth-count">0</span> bytes)</div>
+        <div class="tracer-strip" id="tracer-eth"></div>
       </div>
-      <div class="tracer-connector">↓ mapped into the OPU payload, starting at row 1, column 17 ↓</div>
+      <div class="tracer-connector" id="tracer-connector-1"></div>
+      <div id="tracer-wire-block">
+        <div class="tracer-row">
+          <div class="tracer-row-caption" id="tracer-wire-caption">Wire bytes — what actually enters the OPU payload (<span id="tracer-wire-count">0</span> bytes)</div>
+          <div class="tracer-strip" id="tracer-wire"></div>
+        </div>
+        <div class="tracer-connector" id="tracer-connector-2"></div>
+      </div>
       <div class="tracer-row">
         <div class="tracer-row-caption">Destination — OTU frame columns (<span id="tracer-dest-count">0</span> bytes)</div>
         <div class="tracer-strip" id="tracer-dest"></div>
